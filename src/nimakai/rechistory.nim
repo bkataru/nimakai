@@ -133,12 +133,12 @@ proc printRecHistory*(days: int = 30, path: string = "") =
       if r.recommendedModel != r.currentModel:
         changes.add(r.category & ": " & r.currentModel & " -> " & r.recommendedModel)
 
-    let appliedStr = if e.applied: "\e[32myes\e[0m" else: "\e[90mno\e[0m"
     let changeStr = if changes.len == 0: "\e[90m(no changes)\e[0m"
                     else: changes[0]
+    let appliedStr = if e.applied: "yes" else: "no"
 
     echo "  " & padRight(e.ts, 22) & padRight($e.rounds, 8) &
-         padRight(if e.applied: "yes" else: "no", 9) & changeStr
+         padRight(appliedStr, 9) & changeStr
 
     for i in 1..<changes.len:
       echo "  " & " ".repeat(39) & changes[i]

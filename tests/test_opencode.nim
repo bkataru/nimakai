@@ -1,5 +1,5 @@
 import std/[unittest, os, json]
-import nimakai/[types, opencode]
+import nimakai/opencode
 
 suite "parseOpenCodeConfig":
   test "returns empty for nonexistent file":

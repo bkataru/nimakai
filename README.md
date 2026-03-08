@@ -197,20 +197,20 @@ src/
     discovery.nim          Live model discovery from NVIDIA API
 tests/
     test_types.nim         9 tests
-    test_metrics.nim       37 tests
+    test_metrics.nim       41 tests
     test_display.nim       32 tests
     test_ping.nim          15 tests
     test_catalog.nim       22 tests
     test_config.nim        12 tests
     test_opencode.nim      5 tests
-    test_recommend.nim     33 tests
+    test_recommend.nim     34 tests
     test_sync.nim          17 tests
     test_history.nim       28 tests
     test_rechistory.nim    9 tests
     test_watch.nim         8 tests
     test_integration.nim   12 tests
     test_discovery.nim     9 tests
-    test_cli.nim           68 tests
+    test_cli.nim           72 tests
 ```
 
 ## License

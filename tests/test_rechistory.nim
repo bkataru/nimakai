@@ -1,7 +1,7 @@
 ## Tests for recommendation history tracking.
 
 import std/[unittest, os, json, strutils]
-import nimakai/[types, recommend, rechistory]
+import nimakai/[recommend, rechistory]
 
 suite "appendRecHistory":
   test "writes JSONL entry":

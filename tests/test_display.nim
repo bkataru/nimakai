@@ -1,5 +1,5 @@
-import std/[strutils, unittest, options]
-import nimakai/[types, display, metrics, catalog]
+import std/[strutils, unittest]
+import nimakai/[types, display, metrics]
 
 suite "padding":
   test "padRight pads correctly":

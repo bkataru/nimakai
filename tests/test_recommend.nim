@@ -1,5 +1,5 @@
-import std/[unittest, options, json]
-import nimakai/[types, metrics, catalog, opencode, recommend]
+import std/[unittest, json]
+import nimakai/[types, opencode, recommend]
 
 proc makeStats(id: string, pings: openArray[float],
                total: int = -1, success: int = -1): ModelStats =

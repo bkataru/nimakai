@@ -1,6 +1,6 @@
 ## Watch mode: focused monitoring of OMO-routed models with alerting.
 
-import std/[strformat, strutils]
+import std/strformat
 import ./[types, metrics]
 
 type

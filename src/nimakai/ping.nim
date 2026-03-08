@@ -1,6 +1,6 @@
 ## HTTP ping and error classification for nimakai.
 
-import std/[httpclient, json, times, strutils, net, streams]
+import std/[httpclient, json, times, strutils, net]
 import ./types
 
 proc classifyHealth*(statusCode: int, msg: string): Health =

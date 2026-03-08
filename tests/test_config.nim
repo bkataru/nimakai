@@ -43,8 +43,6 @@ suite "saveConfigFile":
     let path = "/tmp/test-nimakai-save.json"
     defer:
       if fileExists(path): removeFile(path)
-      let dir = parentDir(path)
-      # Don't try to remove /tmp
 
     saveConfigFile(path, favorites = @["model/x"],
                    interval = 7, timeout = 20)

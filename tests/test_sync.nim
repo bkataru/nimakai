@@ -1,5 +1,5 @@
 import std/[unittest, json, os, strutils]
-import nimakai/[sync, recommend, opencode]
+import nimakai/[sync, recommend]
 
 let testDir = getTempDir() / "test_sync_" & $getCurrentProcessId()
 
@@ -211,7 +211,7 @@ suite "rollbackOmo":
     writeFile(omoPath, pretty(originalData))
 
     # Create a backup
-    let backupPath = backupOmo(omoPath)
+    discard backupOmo(omoPath)
 
     # Modify the original
     let modifiedData = %*{

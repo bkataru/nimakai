@@ -1,5 +1,5 @@
 import std/[unittest, json, os, strutils, times]
-import nimakai/[history, types, metrics]
+import nimakai/[history, types]
 
 proc testDir(): string =
   getTempDir() / "test_history_" & $getCurrentProcessId()

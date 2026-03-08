@@ -1,4 +1,4 @@
-import std/[unittest, options, sets, json, os, tables]
+import std/[unittest, options, sets, json, os]
 import nimakai/[types, catalog]
 
 suite "BuiltinCatalog integrity":
