@@ -74,6 +74,7 @@ nimakai                    Continuous benchmark (default)
 nimakai catalog            List all 46 known models with tiers and metadata
 nimakai recommend          Benchmark and recommend routing changes
 nimakai history            Show historical benchmark data
+nimakai trends             Show latency trend analysis (improving/degrading/stable)
 nimakai opencode           Show models from opencode.json + OMO routing
 ```
 
@@ -104,14 +105,15 @@ Each OMO category is scored using weighted criteria:
 
 ## Interactive Keys (continuous mode)
 
-| Key | Sort By |
-|-----|---------|
-| `A` | Average latency |
-| `P` | P95 latency |
-| `S` | Stability score |
-| `T` | Tier |
-| `N` | Model name |
-| `U` | Uptime % |
+| Key | Action |
+|-----|--------|
+| `A` | Sort by average latency |
+| `P` | Sort by P95 latency |
+| `S` | Sort by stability score |
+| `T` | Sort by tier |
+| `N` | Sort by model name |
+| `U` | Sort by uptime % |
+| `1-9` | Toggle favorite on Nth model |
 | `Q` | Quit |
 
 ## Options
@@ -179,7 +181,9 @@ tests/
     test_catalog.nim       13 tests
     test_config.nim        5 tests
     test_opencode.nim      5 tests
-    test_recommend.nim     12 tests
+    test_recommend.nim     15 tests
+    test_sync.nim          16 tests
+    test_history.nim       28 tests
 ```
 
 ## License

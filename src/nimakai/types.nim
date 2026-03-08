@@ -88,6 +88,7 @@ type
     smCatalog = "catalog"
     smRecommend = "recommend"
     smHistory = "history"
+    smTrends = "trends"
     smOpencode = "opencode"
 
   Config* = object

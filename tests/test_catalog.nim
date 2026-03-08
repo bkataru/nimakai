@@ -1,4 +1,4 @@
-import std/[unittest, options, sets]
+import std/[unittest, options, sets, json, os]
 import nimakai/[types, catalog]
 
 suite "BuiltinCatalog integrity":
@@ -75,3 +75,85 @@ suite "catalogModelIds":
     let ids = catalogModelIds(BuiltinCatalog)
     check ids.len == BuiltinCatalog.len
     check "z-ai/glm4.7" in ids
+
+suite "loadUserModels":
+  test "loads models from a temp JSON file":
+    let tmpPath = getTempDir() / "nimakai_test_models.json"
+    let data = %*[
+      {
+        "id": "custom/test-model",
+        "name": "Test Model",
+        "tier": "A+",
+        "sweScore": 55.0,
+        "ctxSize": 65536,
+        "thinking": true,
+        "multimodal": false,
+      }
+    ]
+    writeFile(tmpPath, $data)
+    defer: removeFile(tmpPath)
+
+    let models = loadUserModels(tmpPath)
+    check models.len == 1
+    check models[0].id == "custom/test-model"
+    check models[0].name == "Test Model"
+    check models[0].tier == tAPlus
+    check abs(models[0].sweScore - 55.0) < 0.01
+    check models[0].ctxSize == 65536
+    check models[0].thinking == true
+    check models[0].multimodal == false
+
+  test "returns empty for non-existent file":
+    let models = loadUserModels("/tmp/nimakai_nonexistent_file_12345.json")
+    check models.len == 0
+
+  test "loads multiple models":
+    let tmpPath = getTempDir() / "nimakai_test_models_multi.json"
+    let data = %*[
+      {"id": "custom/model-a", "name": "Model A", "tier": "S+", "sweScore": 72.0},
+      {"id": "custom/model-b", "name": "Model B", "tier": "C", "sweScore": 15.0},
+    ]
+    writeFile(tmpPath, $data)
+    defer: removeFile(tmpPath)
+
+    let models = loadUserModels(tmpPath)
+    check models.len == 2
+    check models[0].id == "custom/model-a"
+    check models[0].tier == tSPlus
+    check models[1].id == "custom/model-b"
+    check models[1].tier == tC
+
+  test "defaults tier to B for unknown tier string":
+    let tmpPath = getTempDir() / "nimakai_test_models_unk.json"
+    let data = %*[
+      {"id": "custom/unknown-tier", "tier": "Z"}
+    ]
+    writeFile(tmpPath, $data)
+    defer: removeFile(tmpPath)
+
+    let models = loadUserModels(tmpPath)
+    check models.len == 1
+    check models[0].tier == tB
+
+  test "loadCatalog overrides builtin model with user model":
+    let tmpPath = getTempDir() / "nimakai_test_override.json"
+    # Override an existing builtin model
+    let data = %*[
+      {
+        "id": "z-ai/glm4.7",
+        "name": "GLM 4.7 Custom",
+        "tier": "A",
+        "sweScore": 45.0,
+        "ctxSize": 32768,
+      }
+    ]
+    writeFile(tmpPath, $data)
+    defer: removeFile(tmpPath)
+
+    let cat = loadCatalog(tmpPath)
+    let meta = cat.lookupMeta("z-ai/glm4.7")
+    check meta.isSome
+    check meta.get.name == "GLM 4.7 Custom"
+    check meta.get.tier == tA
+    check abs(meta.get.sweScore - 45.0) < 0.01
+    check meta.get.ctxSize == 32768

@@ -49,6 +49,9 @@ proc parseArgs(): Config =
     of "history":
       result.subcommand = smHistory
       return
+    of "trends":
+      result.subcommand = smTrends
+      return
     of "opencode":
       result.subcommand = smOpencode
       return
@@ -102,6 +105,7 @@ Commands:
   catalog                List all known models with metadata
   recommend              Benchmark and recommend routing changes
   history                Show historical benchmark data
+  trends                 Show latency trend analysis
   opencode               Show models from opencode.json
 
 Options:
@@ -121,6 +125,7 @@ Options:
 
 Interactive keys (continuous mode):
   A/P/S/T/N/U            Sort by avg/p95/stability/tier/name/uptime
+  1-9                    Toggle favorite on Nth model
   Q                      Quit
 
 Environment:
@@ -239,6 +244,15 @@ proc runBenchmark(cfg: Config, cat: seq[ModelMeta], favorites: seq[string]) =
           of 't', 'T': sortCol = scTier
           of 'n', 'N': sortCol = scName
           of 'u', 'U': sortCol = scUptime
+          of '1'..'9':
+            let idx = ord(key) - ord('1')
+            if idx < stats.len:
+              stats[idx].favorite = not stats[idx].favorite
+              # Persist favorites
+              var favs: seq[string] = @[]
+              for s in stats:
+                if s.favorite: favs.add(s.id)
+              saveFavorites("", favs)
           of 'q', 'Q':
             disableRawMode()
             quit(0)
@@ -333,6 +347,10 @@ proc main() =
 
   of smHistory:
     printHistory()
+    return
+
+  of smTrends:
+    printTrends()
     return
 
   of smOpencode:

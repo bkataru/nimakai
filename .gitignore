@@ -16,6 +16,8 @@ tests/test_catalog
 tests/test_config
 tests/test_opencode
 tests/test_recommend
+tests/test_sync
+tests/test_history
 
 # Nimble
 nimbledeps/

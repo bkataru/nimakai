@@ -1,5 +1,5 @@
-import std/[strutils, unittest]
-import nimakai/[types, display]
+import std/[strutils, unittest, options]
+import nimakai/[types, display, metrics, catalog]
 
 suite "padding":
   test "padRight pads correctly":
@@ -80,3 +80,114 @@ suite "verdictColor":
 
   test "Pending is dim":
     check "\e[90m" in verdictColor(vPending)
+
+proc makeDisplayStats(id: string, pings: openArray[float], fav: bool = false): ModelStats =
+  result.id = id
+  result.name = id
+  result.lastHealth = hUp
+  result.totalPings = pings.len
+  result.successPings = pings.len
+  for p in pings:
+    result.addSample(p)
+  if pings.len > 0:
+    result.lastMs = pings[^1]
+  result.favorite = fav
+
+suite "sortStats":
+  let cat = @[
+    ModelMeta(id: "alpha", name: "Alpha", tier: tSPlus, sweScore: 78.0, ctxSize: 131072),
+    ModelMeta(id: "beta", name: "Beta", tier: tA, sweScore: 45.0, ctxSize: 131072),
+    ModelMeta(id: "gamma", name: "Gamma", tier: tS, sweScore: 65.0, ctxSize: 131072),
+  ]
+  let th = DefaultThresholds
+
+  test "sort by avg ascending":
+    var stats = @[
+      makeDisplayStats("beta", [500.0, 600.0]),   # avg 550
+      makeDisplayStats("alpha", [100.0, 200.0]),   # avg 150
+      makeDisplayStats("gamma", [300.0, 400.0]),   # avg 350
+    ]
+    sortStats(stats, scAvg, cat, th)
+    check stats[0].id == "alpha"
+    check stats[1].id == "gamma"
+    check stats[2].id == "beta"
+
+  test "sort by name ascending":
+    var stats = @[
+      makeDisplayStats("gamma", [100.0]),
+      makeDisplayStats("alpha", [100.0]),
+      makeDisplayStats("beta", [100.0]),
+    ]
+    sortStats(stats, scName, cat, th)
+    check stats[0].id == "alpha"
+    check stats[1].id == "beta"
+    check stats[2].id == "gamma"
+
+  test "sort by tier ascending (lower tier ordinal first)":
+    var stats = @[
+      makeDisplayStats("beta", [100.0]),   # tA = ord 3
+      makeDisplayStats("gamma", [100.0]),  # tS = ord 1
+      makeDisplayStats("alpha", [100.0]),  # tSPlus = ord 0
+    ]
+    sortStats(stats, scTier, cat, th)
+    check stats[0].id == "alpha"   # S+
+    check stats[1].id == "gamma"   # S
+    check stats[2].id == "beta"    # A
+
+  test "sort by uptime descending":
+    var stats = @[
+      makeDisplayStats("alpha", [100.0]),
+      makeDisplayStats("beta", [100.0]),
+      makeDisplayStats("gamma", [100.0]),
+    ]
+    # Manually set different uptimes
+    stats[0].totalPings = 10; stats[0].successPings = 5   # 50%
+    stats[1].totalPings = 10; stats[1].successPings = 10  # 100%
+    stats[2].totalPings = 10; stats[2].successPings = 8   # 80%
+    sortStats(stats, scUptime, cat, th)
+    check stats[0].id == "beta"    # 100%
+    check stats[1].id == "gamma"   # 80%
+    check stats[2].id == "alpha"   # 50%
+
+  test "favorites always come first regardless of sort column":
+    var stats = @[
+      makeDisplayStats("beta", [500.0, 600.0]),             # avg 550, not fav
+      makeDisplayStats("alpha", [100.0, 200.0], fav = true), # avg 150, fav
+      makeDisplayStats("gamma", [300.0, 400.0]),             # avg 350, not fav
+    ]
+    # Sort by avg; alpha has lowest avg AND is favorite, so it should be first
+    sortStats(stats, scAvg, cat, th)
+    check stats[0].id == "alpha"
+    check stats[0].favorite == true
+
+  test "favorite with higher avg still comes first":
+    var stats = @[
+      makeDisplayStats("alpha", [100.0, 200.0]),              # avg 150, not fav
+      makeDisplayStats("beta", [900.0, 1000.0], fav = true),  # avg 950, fav
+      makeDisplayStats("gamma", [300.0, 400.0]),               # avg 350, not fav
+    ]
+    sortStats(stats, scAvg, cat, th)
+    check stats[0].id == "beta"     # favorite pinned to top despite high avg
+    check stats[0].favorite == true
+    check stats[1].id == "alpha"    # lowest avg among non-favorites
+    check stats[2].id == "gamma"
+
+  test "sort by p95 ascending":
+    var stats = @[
+      makeDisplayStats("alpha", [100.0, 200.0, 300.0]),  # lower p95
+      makeDisplayStats("beta", [500.0, 600.0, 700.0]),   # higher p95
+    ]
+    sortStats(stats, scP95, cat, th)
+    check stats[0].id == "alpha"
+    check stats[1].id == "beta"
+
+  test "sort by stability descending":
+    var stats = @[
+      makeDisplayStats("alpha", [100.0, 110.0, 105.0]),    # low jitter, good stability
+      makeDisplayStats("beta", [100.0, 3000.0, 200.0]),    # high jitter, spiky, worse stability
+    ]
+    stats[0].totalPings = 3; stats[0].successPings = 3
+    stats[1].totalPings = 3; stats[1].successPings = 3
+    sortStats(stats, scStability, cat, th)
+    # Higher stability score should come first (descending)
+    check stats[0].stabilityScore(th) >= stats[1].stabilityScore(th)

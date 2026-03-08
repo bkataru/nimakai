@@ -23,3 +23,5 @@ task test, "Run tests":
   exec "nim c -d:ssl --path:src -r tests/test_config.nim"
   exec "nim c -d:ssl --path:src -r tests/test_opencode.nim"
   exec "nim c -d:ssl --path:src -r tests/test_recommend.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_sync.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_history.nim"

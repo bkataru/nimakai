@@ -1,4 +1,4 @@
-import std/[unittest, options]
+import std/[unittest, options, json]
 import nimakai/[types, metrics, catalog, opencode, recommend]
 
 proc makeStats(id: string, pings: openArray[float],
@@ -115,3 +115,59 @@ suite "recommend":
     let recs = recommend(stats, cat, omo)
     check recs.len == 1
     check recs[0].recommendedModel == "vision/model"
+
+suite "recommendationsToJson":
+  test "empty recommendations produces empty array":
+    let recs: seq[Recommendation] = @[]
+    let j = recommendationsToJson(recs)
+    check j.hasKey("recommendations")
+    check j["recommendations"].len == 0
+
+  test "single recommendation serializes all fields":
+    let recs = @[Recommendation(
+      category: "quick",
+      currentModel: "slow/model",
+      recommendedModel: "fast/model",
+      reason: "42% lower avg latency",
+      currentScore: 35.5,
+      recommendedScore: 78.2,
+    )]
+    let j = recommendationsToJson(recs)
+    check j.hasKey("recommendations")
+    check j["recommendations"].kind == JArray
+    check j["recommendations"].len == 1
+
+    let r = j["recommendations"][0]
+    check r["category"].getStr() == "quick"
+    check r["current_model"].getStr() == "slow/model"
+    check r["recommended_model"].getStr() == "fast/model"
+    check r["reason"].getStr() == "42% lower avg latency"
+    check abs(r["current_score"].getFloat() - 35.5) < 0.01
+    check abs(r["recommended_score"].getFloat() - 78.2) < 0.01
+
+  test "multiple recommendations all present in array":
+    let recs = @[
+      Recommendation(
+        category: "quick",
+        currentModel: "model-a",
+        recommendedModel: "model-b",
+        reason: "faster",
+        currentScore: 40.0,
+        recommendedScore: 80.0,
+      ),
+      Recommendation(
+        category: "deep",
+        currentModel: "model-b",
+        recommendedModel: "model-b",
+        reason: "already optimal",
+        currentScore: 75.0,
+        recommendedScore: 75.0,
+      ),
+    ]
+    let j = recommendationsToJson(recs)
+    check j["recommendations"].len == 2
+    check j["recommendations"][0]["category"].getStr() == "quick"
+    check j["recommendations"][1]["category"].getStr() == "deep"
+    check j["recommendations"][1]["reason"].getStr() == "already optimal"
+    check abs(j["recommendations"][1]["current_score"].getFloat() -
+              j["recommendations"][1]["recommended_score"].getFloat()) < 0.01
