@@ -1,11 +1,21 @@
 # Nim build artifacts
 nimcache/
 src/nimcache/
-nimakai
+/nimakai
 *.exe
 *.dll
 *.so
 *.dylib
+
+# Compiled test binaries
+tests/test_types
+tests/test_metrics
+tests/test_display
+tests/test_ping
+tests/test_catalog
+tests/test_config
+tests/test_opencode
+tests/test_recommend
 
 # Nimble
 nimbledeps/

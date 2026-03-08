@@ -1,245 +1,12 @@
-import std/[httpclient, json, times, os, strformat, strutils, parseopt, math, algorithm, net]
+## nimakai — NVIDIA NIM model latency benchmarker
+## https://github.com/bkataru/nimakai
+
+import std/[os, strformat, strutils, parseopt, times, options, json]
+import std/posix
+import posix/termios as term_mod
 import malebolgia
-
-const
-  Version = "0.1.0"
-  BaseURL = "https://integrate.api.nvidia.com/v1/chat/completions"
-  DefaultTimeout = 15 # seconds
-  DefaultInterval = 5 # seconds
-
-type
-  Health = enum
-    hPending = "PENDING"
-    hUp = "UP"
-    hTimeout = "TIMEOUT"
-    hOverloaded = "OVERLOADED"
-    hError = "ERROR"
-    hNoKey = "NO_KEY"
-
-  PingResult = object
-    health: Health
-    ms: float
-
-  ModelStats = object
-    id: string
-    pings: seq[float]
-    totalPings: int
-    successPings: int
-    lastMs: float
-    lastHealth: Health
-
-  Config = object
-    models: seq[string]
-    once: bool
-    interval: int
-    timeout: int
-    jsonOutput: bool
-    apiKey: string
-
-const DefaultModels = @[
-  "qwen/qwen3.5-122b-a10b",
-  "qwen/qwen3.5-397b-a17b",
-  "z-ai/glm4.7",
-  "stepfun-ai/step-3.5-flash",
-  "minimaxai/minimax-m2.5",
-  "minimaxai/minimax-m2.1",
-]
-
-# --- Metrics ---
-
-proc avg(stats: ModelStats): float =
-  if stats.pings.len == 0: return 0.0
-  var sum = 0.0
-  for v in stats.pings: sum += v
-  sum / stats.pings.len.float
-
-proc p95(stats: ModelStats): float =
-  if stats.pings.len < 2: return stats.avg()
-  var sorted = stats.pings
-  sorted.sort()
-  let idx = min(int(ceil(sorted.len.float * 0.95)) - 1, sorted.len - 1)
-  sorted[idx]
-
-proc jitter(stats: ModelStats): float =
-  if stats.pings.len < 2: return 0.0
-  let mean = stats.avg()
-  var sumSq = 0.0
-  for v in stats.pings:
-    let d = v - mean
-    sumSq += d * d
-  sqrt(sumSq / stats.pings.len.float)
-
-proc uptime(stats: ModelStats): float =
-  if stats.totalPings == 0: return 0.0
-  (stats.successPings.float / stats.totalPings.float) * 100.0
-
-proc verdict(stats: ModelStats): string =
-  if stats.pings.len == 0: return "Pending"
-  let a = stats.avg()
-  let p = stats.p95()
-  if a < 400 and p < 800: return "Perfect"
-  if a < 1000 and p < 2000: return "Normal"
-  if stats.pings.len >= 3 and p > a * 2.5: return "Spiky"
-  if a < 2000: return "Slow"
-  if a < 5000: return "Very Slow"
-  return "Unstable"
-
-# --- Ping (runs in worker thread) ---
-
-proc doPing(apiKey, modelId: string, timeout: int): PingResult {.gcsafe.} =
-  let payload = $(%*{
-    "model": modelId,
-    "messages": [{"role": "user", "content": "hi"}],
-    "max_tokens": 1,
-    "stream": false
-  })
-
-  let sslCtx = newContext(verifyMode = CVerifyPeer)
-  let client = newHttpClient(timeout = timeout * 1000, sslContext = sslCtx)
-  client.headers = newHttpHeaders({
-    "Content-Type": "application/json",
-    "Authorization": "Bearer " & apiKey
-  })
-
-  let t0 = epochTime()
-  try:
-    discard client.postContent(BaseURL, payload)
-    let ms = (epochTime() - t0) * 1000.0
-    client.close()
-    result = PingResult(health: hUp, ms: ms)
-  except CatchableError as e:
-    let ms = (epochTime() - t0) * 1000.0
-    try: client.close()
-    except CatchableError: discard
-    let msg = e.msg.toLowerAscii()
-    if "timeout" in msg or "timed out" in msg:
-      result = PingResult(health: hTimeout, ms: ms)
-    elif "401" in msg or "403" in msg:
-      result = PingResult(health: hNoKey, ms: ms)
-    elif "429" in msg:
-      result = PingResult(health: hOverloaded, ms: ms)
-    else:
-      result = PingResult(health: hError, ms: ms)
-
-# --- Display ---
-
-proc colorLatency(ms: float): string =
-  let val = &"{ms:.0f}ms"
-  if ms < 500: return "\e[32m" & val & "\e[0m"
-  if ms < 1500: return "\e[33m" & val & "\e[0m"
-  return "\e[31m" & val & "\e[0m"
-
-proc healthIcon(h: Health): string =
-  case h
-  of hUp: "\e[32mUP\e[0m"
-  of hTimeout: "\e[33mTIMEOUT\e[0m"
-  of hOverloaded: "\e[31mOVERLOADED\e[0m"
-  of hError: "\e[31mERROR\e[0m"
-  of hNoKey: "\e[33mNO_KEY\e[0m"
-  of hPending: "\e[90mPENDING\e[0m"
-
-proc verdictColor(v: string): string =
-  case v
-  of "Perfect": "\e[32m" & v & "\e[0m"
-  of "Normal": "\e[36m" & v & "\e[0m"
-  of "Slow": "\e[33m" & v & "\e[0m"
-  of "Spiky": "\e[35m" & v & "\e[0m"
-  of "Very Slow": "\e[31m" & v & "\e[0m"
-  of "Unstable": "\e[31;1m" & v & "\e[0m"
-  else: "\e[90m" & v & "\e[0m"
-
-proc padRight(s: string, width: int): string =
-  if s.len >= width: s[0..<width]
-  else: s & ' '.repeat(width - s.len)
-
-proc padLeft(s: string, width: int): string =
-  if s.len >= width: s[0..<width]
-  else: ' '.repeat(width - s.len) & s
-
-proc stripAnsi(s: string): int =
-  var i = 0
-  var count = 0
-  while i < s.len:
-    if s[i] == '\e':
-      while i < s.len and s[i] != 'm': inc i
-      inc i
-    else:
-      inc count
-      inc i
-  count
-
-proc padRightAnsi(s: string, width: int): string =
-  let visible = stripAnsi(s)
-  if visible >= width: s
-  else: s & ' '.repeat(width - visible)
-
-proc padLeftAnsi(s: string, width: int): string =
-  let visible = stripAnsi(s)
-  if visible >= width: s
-  else: ' '.repeat(width - visible) & s
-
-proc printTable(stats: seq[ModelStats], round: int) =
-  let hdr = &"\e[1m nimakai v{Version}\e[0m  \e[90mround {round} | NVIDIA NIM latency benchmark\e[0m"
-  echo ""
-  echo hdr
-  echo ""
-
-  let header = padRight("MODEL", 35) &
-               padLeft("LATEST", 10) &
-               padLeft("AVG", 10) &
-               padLeft("P95", 10) &
-               padLeft("JITTER", 10) &
-               "  " & padRight("HEALTH", 12) &
-               padRight("VERDICT", 12) &
-               padLeft("UP%", 7)
-  echo "\e[1;90m" & header & "\e[0m"
-  echo "\e[90m" & "-".repeat(106) & "\e[0m"
-
-  for s in stats:
-    var line = padRight(s.id, 35)
-
-    if s.pings.len > 0:
-      line &= padLeftAnsi(colorLatency(s.lastMs), 10)
-      line &= padLeftAnsi(colorLatency(s.avg()), 10)
-      line &= padLeftAnsi(colorLatency(s.p95()), 10)
-      line &= padLeftAnsi(&"\e[90m{s.jitter():.0f}ms\e[0m", 10)
-    else:
-      line &= padLeft("-", 10)
-      line &= padLeft("-", 10)
-      line &= padLeft("-", 10)
-      line &= padLeft("-", 10)
-
-    line &= "  " & padRightAnsi(healthIcon(s.lastHealth), 12)
-    line &= padRightAnsi(verdictColor(s.verdict()), 12)
-
-    let up = &"{s.uptime():.0f}%"
-    if s.uptime() >= 90: line &= padLeft("\e[32m" & up & "\e[0m", 7)
-    elif s.uptime() >= 50: line &= padLeft("\e[33m" & up & "\e[0m", 7)
-    else: line &= padLeft("\e[31m" & up & "\e[0m", 7)
-
-    echo line
-
-  echo ""
-
-proc printJson(stats: seq[ModelStats], round: int) =
-  var results = newJArray()
-  for s in stats:
-    results.add(%*{
-      "model": s.id,
-      "latest_ms": if s.pings.len > 0: s.lastMs else: 0.0,
-      "avg_ms": s.avg(),
-      "p95_ms": s.p95(),
-      "jitter_ms": s.jitter(),
-      "health": $s.lastHealth,
-      "verdict": s.verdict(),
-      "uptime_pct": s.uptime(),
-      "total_pings": s.totalPings,
-      "success_pings": s.successPings
-    })
-  let output = %*{"round": round, "results": results}
-  echo $output
-
-# --- CLI ---
+import nimakai/[types, ping, catalog, display, config, history,
+                opencode, recommend, sync]
 
 proc parseArgs(): Config =
   result = Config(
@@ -248,12 +15,46 @@ proc parseArgs(): Config =
     interval: DefaultInterval,
     timeout: DefaultTimeout,
     jsonOutput: false,
-    apiKey: ""
+    apiKey: "",
+    subcommand: smBenchmark,
+    tierFilter: "",
+    sortColumn: scAvg,
+    useOpencode: false,
+    rounds: 3,
+    applySync: false,
+    rollback: false,
+    thresholds: DefaultThresholds,
   )
 
   result.apiKey = getEnv("NVIDIA_API_KEY", "")
 
-  var p = initOptParser(commandLineParams())
+  # Load config file defaults
+  let fileCfg = loadConfigFile()
+  if fileCfg.interval != DefaultInterval: result.interval = fileCfg.interval
+  if fileCfg.timeout != DefaultTimeout: result.timeout = fileCfg.timeout
+  if fileCfg.models.len > 0: result.models = fileCfg.models
+  if fileCfg.tierFilter.len > 0: result.tierFilter = fileCfg.tierFilter
+  result.thresholds = fileCfg.thresholds
+
+  let params = commandLineParams()
+
+  # Check for subcommands (first non-flag argument)
+  if params.len > 0:
+    case params[0]
+    of "catalog":
+      result.subcommand = smCatalog
+      return
+    of "recommend":
+      result.subcommand = smRecommend
+    of "history":
+      result.subcommand = smHistory
+      return
+    of "opencode":
+      result.subcommand = smOpencode
+      return
+    else: discard
+
+  var p = initOptParser(params)
   while true:
     p.next()
     case p.kind
@@ -263,18 +64,45 @@ proc parseArgs(): Config =
       of "once", "1": result.once = true
       of "json", "j": result.jsonOutput = true
       of "models", "m":
+        result.models = @[]
         for m in p.val.split(','):
           let trimmed = m.strip()
           if trimmed.len > 0: result.models.add(trimmed)
       of "interval", "i":
-        result.interval = parseInt(p.val)
+        try: result.interval = parseInt(p.val)
+        except ValueError: discard
       of "timeout", "t":
-        result.timeout = parseInt(p.val)
+        try: result.timeout = parseInt(p.val)
+        except ValueError: discard
+      of "tier":
+        result.tierFilter = p.val
+      of "sort":
+        case p.val.toLowerAscii()
+        of "avg", "a": result.sortColumn = scAvg
+        of "p95", "p": result.sortColumn = scP95
+        of "stability", "s": result.sortColumn = scStability
+        of "tier", "t": result.sortColumn = scTier
+        of "name", "n": result.sortColumn = scName
+        of "uptime", "u": result.sortColumn = scUptime
+        else: discard
+      of "opencode": result.useOpencode = true
+      of "rounds", "r":
+        try: result.rounds = parseInt(p.val)
+        except ValueError: discard
+      of "apply": result.applySync = true
+      of "rollback": result.rollback = true
       of "help", "h":
         echo &"""
 nimakai v{Version} - NVIDIA NIM latency benchmarker
 
-Usage: nimakai [options]
+Usage: nimakai [command] [options]
+
+Commands:
+  (default)              Continuous benchmark
+  catalog                List all known models with metadata
+  recommend              Benchmark and recommend routing changes
+  history                Show historical benchmark data
+  opencode               Show models from opencode.json
 
 Options:
   --once, -1             Single round, then exit
@@ -282,56 +110,179 @@ Options:
   --interval, -i <sec>   Ping interval (default: {DefaultInterval}s)
   --timeout, -t <sec>    Request timeout (default: {DefaultTimeout}s)
   --json, -j             Output JSON
+  --tier <S|A|B|C>       Filter models by tier family
+  --sort <col>           Sort: avg, p95, stability, tier, name, uptime
+  --opencode             Use models from opencode.json
+  --rounds, -r <n>       Benchmark rounds for recommend (default: 3)
+  --apply                Apply recommendations to oh-my-opencode.json
+  --rollback             Rollback oh-my-opencode.json from backup
   --help, -h             Show this help
   --version, -v          Show version
+
+Interactive keys (continuous mode):
+  A/P/S/T/N/U            Sort by avg/p95/stability/tier/name/uptime
+  Q                      Quit
 
 Environment:
   NVIDIA_API_KEY         API key for NVIDIA NIM
 
 Examples:
   nimakai --once
+  nimakai catalog --tier S
   nimakai -m qwen/qwen3.5-122b-a10b,qwen/qwen3.5-397b-a17b
-  nimakai --interval 3 --json
+  nimakai recommend --rounds 5 --apply
+  nimakai --opencode --json
 """
         quit(0)
       of "version", "v":
         echo &"nimakai v{Version}"
         quit(0)
       else:
-        echo &"Unknown option: {p.key}"
+        stderr.writeLine &"Unknown option: {p.key}"
         quit(1)
     of cmdArgument:
+      # Skip subcommand arg (already handled above)
       discard
 
-  if result.models.len == 0:
-    result.models = DefaultModels
+# --- Terminal raw mode for interactive sorting ---
+
+var origTermios: Termios
+var rawModeEnabled = false
+
+proc enableRawMode() =
+  discard tcGetAttr(0.cint, addr origTermios)
+  var raw = origTermios
+  raw.c_lflag = raw.c_lflag and not (ICANON or ECHO)
+  raw.c_cc[VMIN] = '\0'
+  raw.c_cc[VTIME] = '\0'
+  discard tcSetAttr(0.cint, TCSANOW, addr raw)
+  rawModeEnabled = true
+
+proc disableRawMode() =
+  if rawModeEnabled:
+    discard tcSetAttr(0.cint, TCSANOW, addr origTermios)
+    rawModeEnabled = false
+
+proc tryReadKey(): char =
+  var buf: array[1, char]
+  let n = read(0.cint, addr buf[0], 1)
+  if n > 0: buf[0] else: '\0'
 
 # --- Main ---
 
-proc main() =
-  let cfg = parseArgs()
+proc runBenchmark(cfg: Config, cat: seq[ModelMeta], favorites: seq[string]) =
+  var stats: seq[ModelStats] = @[]
+  for m in cfg.models:
+    let meta = cat.lookupMeta(m)
+    let name = if meta.isSome: meta.get.name else: m
+    var s = ModelStats(id: m, name: name, lastHealth: hPending)
+    if m in favorites: s.favorite = true
+    stats.add(s)
+
+  var sortCol = cfg.sortColumn
+  var round = 0
+  let interactive = not cfg.once and not cfg.jsonOutput and isatty(0.cint) != 0
+
+  if interactive:
+    enableRawMode()
+
+  try:
+    while true:
+      inc round
+
+      var results = newSeq[PingResult](stats.len)
+      for i in 0..<results.len:
+        results[i] = PingResult(health: hTimeout, ms: float(cfg.timeout * 1000))
+
+      try:
+        var m = createMaster(timeout = initDuration(seconds = cfg.timeout + 5))
+        m.awaitAll:
+          for i in 0..<stats.len:
+            m.spawn doPing(cfg.apiKey, stats[i].id, cfg.timeout) -> results[i]
+      except ValueError:
+        discard
+
+      for i in 0..<stats.len:
+        let pr = results[i]
+        stats[i].totalPings += 1
+        stats[i].lastMs = pr.ms
+        stats[i].lastHealth = pr.health
+        if pr.health == hUp:
+          stats[i].successPings += 1
+          stats[i].addSample(pr.ms)
+
+      # Sort before display
+      sortStats(stats, sortCol, cat, cfg.thresholds)
+
+      if cfg.jsonOutput:
+        printJson(stats, round, cat, cfg.thresholds)
+      else:
+        if round > 1 or not cfg.once:
+          stdout.write "\e[2J\e[H"
+        printTable(stats, round, cat, sortCol, cfg.thresholds)
+
+      # Persist to history
+      appendRound(stats, round)
+
+      if cfg.once:
+        break
+
+      # Wait for interval, checking for interactive input
+      let deadline = epochTime() + cfg.interval.float
+      while epochTime() < deadline:
+        if interactive:
+          let key = tryReadKey()
+          case key
+          of 'a', 'A': sortCol = scAvg
+          of 'p', 'P': sortCol = scP95
+          of 's', 'S': sortCol = scStability
+          of 't', 'T': sortCol = scTier
+          of 'n', 'N': sortCol = scName
+          of 'u', 'U': sortCol = scUptime
+          of 'q', 'Q':
+            disableRawMode()
+            quit(0)
+          else: discard
+        sleep(50)
+  finally:
+    disableRawMode()
+
+proc runRecommend(cfg: Config, cat: seq[ModelMeta]) =
+  if cfg.rollback:
+    discard rollbackOmo()
+    return
 
   if cfg.apiKey.len == 0:
-    stderr.writeLine "\e[31mError: NVIDIA_API_KEY environment variable not set\e[0m"
-    stderr.writeLine "Get your key at https://build.nvidia.com"
+    stderr.writeLine "\e[31mError: NVIDIA_API_KEY required for benchmarking\e[0m"
     quit(1)
+
+  # Determine models to benchmark from OMO config
+  let omo = parseOmoConfig()
+  var modelSet: seq[string] = @[]
+  for c in omo.categories:
+    if c.model notin modelSet:
+      modelSet.add(c.model)
+  # Also benchmark all catalog models that could be alternatives
+  for m in cat:
+    if m.id notin modelSet:
+      modelSet.add(m.id)
 
   if not cfg.jsonOutput:
     stderr.writeLine &"\e[1m nimakai\e[0m v{Version}"
-    stderr.writeLine &"\e[90m  {cfg.models.len} models | {cfg.interval}s interval | {cfg.timeout}s timeout | concurrent pings\e[0m"
+    stderr.writeLine &"\e[90m  recommend mode | {cfg.rounds} rounds | {modelSet.len} models\e[0m"
 
-  var stats: seq[ModelStats]
-  for m in cfg.models:
-    stats.add(ModelStats(id: m, lastHealth: hPending))
+  var stats: seq[ModelStats] = @[]
+  for m in modelSet:
+    let meta = cat.lookupMeta(m)
+    let name = if meta.isSome: meta.get.name else: m
+    stats.add(ModelStats(id: m, name: name, lastHealth: hPending))
 
-  var round = 0
-  while true:
-    inc round
+  # Run benchmark rounds
+  for round in 1..cfg.rounds:
+    if not cfg.jsonOutput:
+      stderr.write &"\r\e[90m  round {round}/{cfg.rounds}...\e[0m"
 
-    # Ping all models concurrently via malebolgia thread pool.
-    # Each model gets its own thread — a slow model never blocks the others.
     var results = newSeq[PingResult](stats.len)
-    # Initialize all results as pending so timed-out pings show TIMEOUT
     for i in 0..<results.len:
       results[i] = PingResult(health: hTimeout, ms: float(cfg.timeout * 1000))
 
@@ -341,29 +292,94 @@ proc main() =
         for i in 0..<stats.len:
           m.spawn doPing(cfg.apiKey, stats[i].id, cfg.timeout) -> results[i]
     except ValueError:
-      discard # awaitAll timeout — use whatever results came back
+      discard
 
-    # Collect results
     for i in 0..<stats.len:
       let pr = results[i]
       stats[i].totalPings += 1
       stats[i].lastMs = pr.ms
       stats[i].lastHealth = pr.health
-
       if pr.health == hUp:
         stats[i].successPings += 1
-        stats[i].pings.add(pr.ms)
+        stats[i].addSample(pr.ms)
 
-    if cfg.jsonOutput:
-      printJson(stats, round)
-    else:
-      if round > 1 or not cfg.once:
-        stdout.write "\e[2J\e[H"
-      printTable(stats, round)
+    if round < cfg.rounds:
+      sleep(2000) # brief pause between rounds
 
-    if cfg.once:
-      break
+  if not cfg.jsonOutput:
+    stderr.writeLine "\r\e[90m  benchmarking complete.     \e[0m"
 
-    sleep(cfg.interval * 1000)
+  let recs = recommend(stats, cat, omo, cfg.thresholds)
+
+  if cfg.jsonOutput:
+    echo $recommendationsToJson(recs)
+  elif cfg.applySync:
+    printRecommendations(recs, cfg.rounds)
+    discard syncRecommendations(recs)
+  else:
+    printRecommendations(recs, cfg.rounds)
+
+proc main() =
+  let cfg = parseArgs()
+  let cat = loadCatalog()
+
+  case cfg.subcommand
+  of smCatalog:
+    var filtered = cat
+    if cfg.tierFilter.len > 0:
+      filtered = filterByTier(cat, cfg.tierFilter)
+    printCatalog(filtered)
+    return
+
+  of smHistory:
+    printHistory()
+    return
+
+  of smOpencode:
+    let models = parseOpenCodeConfig()
+    printOpenCodeModels(models)
+    let omo = parseOmoConfig()
+    printOmoRouting(omo)
+    return
+
+  of smRecommend:
+    runRecommend(cfg, cat)
+    return
+
+  of smBenchmark:
+    if cfg.apiKey.len == 0:
+      stderr.writeLine "\e[31mError: NVIDIA_API_KEY environment variable not set\e[0m"
+      stderr.writeLine "Get your key at https://build.nvidia.com"
+      quit(1)
+
+    # Determine model list
+    var models = cfg.models
+    if cfg.useOpencode:
+      let ocModels = parseOpenCodeConfig()
+      models = @[]
+      for m in ocModels:
+        models.add(m.id)
+    if models.len == 0:
+      # Default: use catalog models filtered by tier
+      if cfg.tierFilter.len > 0:
+        let filtered = filterByTier(cat, cfg.tierFilter)
+        models = catalogModelIds(filtered)
+      else:
+        # Default subset: S+ and S tier only
+        let filtered = filterByTier(cat, "S")
+        models = catalogModelIds(filtered)
+
+    var runCfg = cfg
+    runCfg.models = models
+
+    if not cfg.jsonOutput:
+      stderr.writeLine &"\e[1m nimakai\e[0m v{Version}"
+      stderr.writeLine &"\e[90m  {models.len} models | {cfg.interval}s interval | {cfg.timeout}s timeout | concurrent pings\e[0m"
+
+    # Prune old history on startup
+    pruneHistory()
+
+    let fileCfg = loadConfigFile()
+    runBenchmark(runCfg, cat, fileCfg.favorites)
 
 main()

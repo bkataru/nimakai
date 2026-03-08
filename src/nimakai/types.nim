@@ -1,0 +1,148 @@
+## Core types, enums, and constants for nimakai.
+
+## No external imports needed for types.
+
+const
+  Version* = "0.4.0"
+  BaseURL* = "https://integrate.api.nvidia.com/v1/chat/completions"
+  DefaultTimeout* = 15
+  DefaultInterval* = 5
+  MaxSamples* = 100
+
+type
+  Health* = enum
+    hPending = "PENDING"
+    hUp = "UP"
+    hTimeout = "TIMEOUT"
+    hOverloaded = "OVERLOADED"
+    hError = "ERROR"
+    hNoKey = "NO_KEY"
+    hNotFound = "NOT_FOUND"
+
+  Verdict* = enum
+    vPending = "Pending"
+    vPerfect = "Perfect"
+    vNormal = "Normal"
+    vSlow = "Slow"
+    vSpiky = "Spiky"
+    vVerySlow = "Very Slow"
+    vNotFound = "Not Found"
+    vNotActive = "Not Active"
+    vUnstable = "Unstable"
+
+  Tier* = enum
+    tSPlus = "S+"
+    tS = "S"
+    tAPlus = "A+"
+    tA = "A"
+    tAMinus = "A-"
+    tBPlus = "B+"
+    tB = "B"
+    tC = "C"
+
+  PingResult* = object
+    health*: Health
+    ms*: float
+    statusCode*: int
+    errorMsg*: string
+    timestamp*: float
+
+  ModelStats* = object
+    id*: string
+    name*: string
+    ring*: array[MaxSamples, float]
+    ringLen*: int
+    ringPos*: int
+    totalPings*: int
+    successPings*: int
+    lastMs*: float
+    lastHealth*: Health
+    favorite*: bool
+
+  ModelMeta* = object
+    id*: string
+    name*: string
+    tier*: Tier
+    sweScore*: float
+    ctxSize*: int
+    thinking*: bool
+    multimodal*: bool
+
+  Thresholds* = object
+    perfectAvg*: float
+    perfectP95*: float
+    normalAvg*: float
+    normalP95*: float
+    spikeMs*: float
+
+  SortColumn* = enum
+    scName = "name"
+    scAvg = "avg"
+    scP95 = "p95"
+    scStability = "stability"
+    scTier = "tier"
+    scUptime = "uptime"
+
+  Subcommand* = enum
+    smBenchmark = "benchmark"
+    smCatalog = "catalog"
+    smRecommend = "recommend"
+    smHistory = "history"
+    smOpencode = "opencode"
+
+  Config* = object
+    models*: seq[string]
+    once*: bool
+    interval*: int
+    timeout*: int
+    jsonOutput*: bool
+    apiKey*: string
+    subcommand*: Subcommand
+    tierFilter*: string
+    sortColumn*: SortColumn
+    useOpencode*: bool
+    rounds*: int
+    applySync*: bool
+    rollback*: bool
+    thresholds*: Thresholds
+
+const DefaultThresholds* = Thresholds(
+  perfectAvg: 400.0,
+  perfectP95: 800.0,
+  normalAvg: 1000.0,
+  normalP95: 2000.0,
+  spikeMs: 3000.0,
+)
+
+proc addSample*(stats: var ModelStats, ms: float) =
+  ## Add a latency sample to the ring buffer.
+  stats.ring[stats.ringPos] = ms
+  stats.ringPos = (stats.ringPos + 1) mod MaxSamples
+  if stats.ringLen < MaxSamples:
+    inc stats.ringLen
+
+proc samples*(stats: ModelStats): seq[float] =
+  ## Extract current ring buffer contents as a seq.
+  result = newSeq[float](stats.ringLen)
+  for i in 0..<stats.ringLen:
+    result[i] = stats.ring[i]
+
+proc tierFamily*(t: Tier): char =
+  ## Get the tier family letter (S, A, B, C).
+  case t
+  of tSPlus, tS: 'S'
+  of tAPlus, tA, tAMinus: 'A'
+  of tBPlus, tB: 'B'
+  of tC: 'C'
+
+proc tierOrd*(t: Tier): int =
+  ## Numeric ordering for tiers (lower = better).
+  case t
+  of tSPlus: 0
+  of tS: 1
+  of tAPlus: 2
+  of tA: 3
+  of tAMinus: 4
+  of tBPlus: 5
+  of tB: 6
+  of tC: 7

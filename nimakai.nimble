@@ -1,5 +1,5 @@
 # Package
-version       = "0.1.0"
+version       = "0.4.0"
 author        = "bkataru"
 description   = "NVIDIA NIM model latency benchmarker"
 license       = "MIT"
@@ -13,3 +13,13 @@ requires "malebolgia >= 0.1.0"
 # Build config
 task build, "Build nimakai":
   exec "nim c -d:ssl -d:release --opt:size -o:nimakai src/nimakai.nim"
+
+task test, "Run tests":
+  exec "nim c -d:ssl --path:src -r tests/test_types.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_metrics.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_display.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_ping.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_catalog.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_config.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_opencode.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_recommend.nim"
