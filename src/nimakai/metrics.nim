@@ -67,17 +67,19 @@ proc spikeRate*(stats: ModelStats, threshold: float = 3000.0): float =
     if stats.ring[i] > threshold: inc count
   count.float / stats.ringLen.float
 
+const MinStabilitySamples* = 3
+
 proc stabilityScore*(stats: ModelStats, th: Thresholds = DefaultThresholds): int =
   ## Composite stability score 0-100 (higher = more stable).
-  ## Returns -1 when insufficient data.
-  if stats.ringLen == 0: return -1
+  ## Returns -1 when insufficient data (fewer than 3 samples).
+  if stats.ringLen < MinStabilitySamples: return -1
   let p95val = stats.p95()
   let jit = stats.jitter()
   let up = stats.uptime()
   let spikes = stats.spikeRate(th.spikeMs)
 
-  let p95Score = clamp(100.0 * (1.0 - p95val / 5000.0), 0.0, 100.0)
-  let jitScore = clamp(100.0 * (1.0 - jit / 2000.0), 0.0, 100.0)
+  let p95Score = clamp(100.0 * (1.0 - p95val / th.verySlowAvg), 0.0, 100.0)
+  let jitScore = clamp(100.0 * (1.0 - jit / th.normalP95), 0.0, 100.0)
   let spikeScore = clamp(100.0 * (1.0 - spikes), 0.0, 100.0)
   let reliScore = up
 
@@ -94,6 +96,6 @@ proc verdict*(stats: ModelStats, th: Thresholds = DefaultThresholds): Verdict =
   if a < th.perfectAvg and p < th.perfectP95: return vPerfect
   if a < th.normalAvg and p < th.normalP95: return vNormal
   if stats.ringLen >= 3 and p > a * 2.5: return vSpiky
-  if a < 2000: return vSlow
-  if a < 5000: return vVerySlow
+  if a < th.slowAvg: return vSlow
+  if a < th.verySlowAvg: return vVerySlow
   return vUnstable

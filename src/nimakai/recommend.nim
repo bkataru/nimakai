@@ -105,11 +105,12 @@ proc recommend*(stats: seq[ModelStats], cat: seq[ModelMeta],
 
       # Find the stats for both models
       var bestStats, curStats: ModelStats
+      var foundBest, foundCur = false
       for s in stats:
-        if s.id == bestModel: bestStats = s
-        if s.id == omocat.model: curStats = s
+        if s.id == bestModel: bestStats = s; foundBest = true
+        if s.id == omocat.model: curStats = s; foundCur = true
 
-      if bestStats.avg() > 0 and curStats.avg() > 0:
+      if foundBest and foundCur and bestStats.avg() > 0 and curStats.avg() > 0:
         let diff = ((curStats.avg() - bestStats.avg()) / curStats.avg() * 100).int
         if diff > 5:
           parts.add(&"{diff}% lower avg latency")
@@ -122,8 +123,8 @@ proc recommend*(stats: seq[ModelStats], cat: seq[ModelMeta],
         elif bestMeta.get.tier == currentMeta.get.tier:
           parts.add(&"same {bestMeta.get.tier} tier")
 
-      let bestStab = bestStats.stabilityScore(th)
-      let curStab = curStats.stabilityScore(th)
+      let bestStab = if foundBest: bestStats.stabilityScore(th) else: -1
+      let curStab = if foundCur: curStats.stabilityScore(th) else: -1
       if bestStab >= 0 and curStab >= 0 and bestStab > curStab + 10:
         parts.add(&"stability {bestStab} vs {curStab}")
 
@@ -143,11 +144,8 @@ proc printRecommendations*(recs: seq[Recommendation], rounds: int) =
   echo &"\e[1m nimakai v{Version}\e[0m  \e[90mrecommendations based on {rounds} rounds\e[0m"
   echo ""
 
-  proc pad(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: s & ' '.repeat(w - s.len)
-
-  echo "\e[1;90m  " & pad("CATEGORY", 22) & pad("CURRENT", 32) &
-       pad("RECOMMENDED", 32) & pad("REASON", 40) & "\e[0m"
+  echo "\e[1;90m  " & padRight("CATEGORY", 22) & padRight("CURRENT", 32) &
+       padRight("RECOMMENDED", 32) & padRight("REASON", 40) & "\e[0m"
   echo "\e[90m  " & "-".repeat(126) & "\e[0m"
 
   for r in recs:
@@ -155,9 +153,9 @@ proc printRecommendations*(recs: seq[Recommendation], rounds: int) =
                      else: r.recommendedModel
     let recColor = if r.recommendedModel == r.currentModel: "\e[90m"
                    else: "\e[32m"
-    echo "  " & pad(r.category, 22) &
-         pad(r.currentModel, 32) &
-         recColor & pad(recDisplay, 32) & "\e[0m" &
+    echo "  " & padRight(r.category, 22) &
+         padRight(r.currentModel, 32) &
+         recColor & padRight(recDisplay, 32) & "\e[0m" &
          "\e[90m" & r.reason & "\e[0m"
 
   echo ""

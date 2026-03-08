@@ -3,14 +3,6 @@
 import std/[strformat, strutils, json, algorithm, options]
 import ./[types, metrics, catalog]
 
-proc padRight*(s: string, width: int): string =
-  if s.len >= width: s[0..<width]
-  else: s & ' '.repeat(width - s.len)
-
-proc padLeft*(s: string, width: int): string =
-  if s.len >= width: s[0..<width]
-  else: ' '.repeat(width - s.len) & s
-
 proc stripAnsi*(s: string): int =
   var i = 0
   var count = 0

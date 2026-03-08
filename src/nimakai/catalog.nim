@@ -136,13 +136,13 @@ proc printCatalog*(catalog: seq[ModelMeta]) =
   echo ""
 
   let header = "  " &
-    (proc(s: string, w: int): string = (if s.len >= w: s[0..<w] else: s & ' '.repeat(w - s.len)))("MODEL", 35) &
-    (proc(s: string, w: int): string = (if s.len >= w: s[0..<w] else: ' '.repeat(w - s.len) & s))("TIER", 5) &
-    (proc(s: string, w: int): string = (if s.len >= w: s[0..<w] else: ' '.repeat(w - s.len) & s))("SWE%", 7) &
-    (proc(s: string, w: int): string = (if s.len >= w: s[0..<w] else: ' '.repeat(w - s.len) & s))("CTX", 8) &
+    padRight("MODEL", 35) &
+    padLeft("TIER", 5) &
+    padLeft("SWE%", 7) &
+    padLeft("CTX", 8) &
     "  " &
-    (proc(s: string, w: int): string = (if s.len >= w: s[0..<w] else: s & ' '.repeat(w - s.len)))("CAPS", 12) &
-    (proc(s: string, w: int): string = (if s.len >= w: s[0..<w] else: s & ' '.repeat(w - s.len)))("ID", 45)
+    padRight("CAPS", 12) &
+    padRight("ID", 45)
   echo "\e[1;90m" & header & "\e[0m"
   echo "\e[90m  " & "-".repeat(112) & "\e[0m"
 
@@ -155,13 +155,8 @@ proc printCatalog*(catalog: seq[ModelMeta]) =
     return cmp(a.name, b.name)
   )
 
-  proc pad(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: s & ' '.repeat(w - s.len)
-  proc padL(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: ' '.repeat(w - s.len) & s
-
   for m in sorted:
-    let tierColor = case m.tier
+    let tc = case m.tier
       of tSPlus: "\e[32;1m"
       of tS: "\e[32m"
       of tAPlus: "\e[36m"
@@ -181,12 +176,12 @@ proc printCatalog*(catalog: seq[ModelMeta]) =
     if caps.len == 0: caps = "-"
 
     echo "  " &
-      pad(m.name, 35) &
-      tierColor & padL($m.tier, 5) & "\e[0m" &
-      padL($m.sweScore & "%", 7) &
-      padL(ctxStr, 8) &
+      padRight(m.name, 35) &
+      tc & padLeft($m.tier, 5) & "\e[0m" &
+      padLeft($m.sweScore & "%", 7) &
+      padLeft(ctxStr, 8) &
       "  " &
-      pad(caps.strip(), 12) &
-      "\e[90m" & pad(m.id, 45) & "\e[0m"
+      padRight(caps.strip(), 12) &
+      "\e[90m" & padRight(m.id, 45) & "\e[0m"
 
   echo ""

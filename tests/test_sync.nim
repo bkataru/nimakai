@@ -49,9 +49,9 @@ suite "backupOmo":
 
     check fileExists(backupPath)
     check backupPath.startsWith(omoPath & ".bak.")
-    # Verify timestamp portion matches YYYYMMDD-HHMMSS format
+    # Verify timestamp portion matches YYYYMMDD-HHMMSS-MMM format
     let suffix = backupPath.replace(omoPath & ".bak.", "")
-    check suffix.len == 15  # "20260308-123456"
+    check suffix.len >= 15  # "20260308-123456-NNN"
     check suffix[8] == '-'
     # Verify backup content matches original
     check readFile(backupPath) == readFile(omoPath)

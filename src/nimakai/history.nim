@@ -134,13 +134,8 @@ proc printHistory*(days: int = 7, path: string = "") =
       if m.health == "UP":
         aggs[idx].agg.upRounds += 1
 
-  proc pad(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: s & ' '.repeat(w - s.len)
-  proc padL(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: ' '.repeat(w - s.len) & s
-
-  echo "\e[1;90m  " & pad("MODEL", 35) & padL("AVG", 10) & padL("P95", 10) &
-       padL("STAB", 8) & padL("UP%", 8) & padL("ROUNDS", 8) & "\e[0m"
+  echo "\e[1;90m  " & padRight("MODEL", 35) & padLeft("AVG", 10) & padLeft("P95", 10) &
+       padLeft("STAB", 8) & padLeft("UP%", 8) & padLeft("ROUNDS", 8) & "\e[0m"
   echo "\e[90m  " & "-".repeat(79) & "\e[0m"
 
   for (id, a) in aggs:
@@ -149,12 +144,12 @@ proc printHistory*(days: int = 7, path: string = "") =
     let avgStab = if a.totalRounds > 0: a.sumStab div a.totalRounds else: 0
     let upPct = if a.totalRounds > 0: (a.upRounds.float / a.totalRounds.float) * 100.0 else: 0.0
 
-    echo "  " & pad(id, 35) &
-      padL($int(avgAvg) & "ms", 10) &
-      padL($int(avgP95) & "ms", 10) &
-      padL($avgStab, 8) &
-      padL($int(upPct) & "%", 8) &
-      padL($a.totalRounds, 8)
+    echo "  " & padRight(id, 35) &
+      padLeft($int(avgAvg) & "ms", 10) &
+      padLeft($int(avgP95) & "ms", 10) &
+      padLeft($avgStab, 8) &
+      padLeft($int(upPct) & "%", 8) &
+      padLeft($a.totalRounds, 8)
 
   echo ""
 
@@ -269,14 +264,9 @@ proc printTrends*(days: int = 7, path: string = "") =
     echo ""
     return
 
-  proc pad(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: s & ' '.repeat(w - s.len)
-  proc padL(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: ' '.repeat(w - s.len) & s
-
-  echo "\e[1;90m  " & pad("MODEL", 35) & padL("TREND", 14) &
-       padL("AVG CHG", 10) & padL("STAB CHG", 10) & padL("RECENT", 10) &
-       padL("OLDER", 10) & "\e[0m"
+  echo "\e[1;90m  " & padRight("MODEL", 35) & padLeft("TREND", 14) &
+       padLeft("AVG CHG", 10) & padLeft("STAB CHG", 10) & padLeft("RECENT", 10) &
+       padLeft("OLDER", 10) & "\e[0m"
   echo "\e[90m  " & "-".repeat(89) & "\e[0m"
 
   var sorted = trends
@@ -304,11 +294,11 @@ proc printTrends*(days: int = 7, path: string = "") =
                   elif t.stabilityChange < 0: $t.stabilityChange
                   else: "0"
 
-    echo "  " & pad(t.id, 35) &
-         dirColor & padL(dirIcon, 14) & "\e[0m" &
-         padL(avgChg, 10) &
-         padL(stabChg, 10) &
-         padL($int(t.recentAvg) & "ms", 10) &
-         padL($int(t.olderAvg) & "ms", 10)
+    echo "  " & padRight(t.id, 35) &
+         dirColor & padLeft(dirIcon, 14) & "\e[0m" &
+         padLeft(avgChg, 10) &
+         padLeft(stabChg, 10) &
+         padLeft($int(t.recentAvg) & "ms", 10) &
+         padLeft($int(t.olderAvg) & "ms", 10)
 
   echo ""

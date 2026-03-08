@@ -92,13 +92,8 @@ proc printOpenCodeModels*(models: seq[OpenCodeModel]) =
   echo "\e[1m nimakai v" & Version & "\e[0m  \e[90mmodels from opencode.json\e[0m"
   echo ""
 
-  proc pad(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: s & ' '.repeat(w - s.len)
-  proc padL(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: ' '.repeat(w - s.len) & s
-
-  echo "\e[1;90m  " & pad("MODEL", 40) & padL("CTX", 10) & padL("OUTPUT", 10) &
-       "  " & pad("ID", 40) & "\e[0m"
+  echo "\e[1;90m  " & padRight("MODEL", 40) & padLeft("CTX", 10) & padLeft("OUTPUT", 10) &
+       "  " & padRight("ID", 40) & "\e[0m"
   echo "\e[90m  " & "-".repeat(100) & "\e[0m"
 
   for m in models:
@@ -107,8 +102,8 @@ proc printOpenCodeModels*(models: seq[OpenCodeModel]) =
                  else: $m.ctxSize
     let outStr = if m.outputLimit >= 1024: $(m.outputLimit div 1024) & "k"
                  else: $m.outputLimit
-    echo "  " & pad(m.name, 40) & padL(ctxStr, 10) & padL(outStr, 10) &
-         "  \e[90m" & pad(m.id, 40) & "\e[0m"
+    echo "  " & padRight(m.name, 40) & padLeft(ctxStr, 10) & padLeft(outStr, 10) &
+         "  \e[90m" & padRight(m.id, 40) & "\e[0m"
   echo ""
 
 proc printOmoRouting*(omo: OmoConfig) =
@@ -116,18 +111,15 @@ proc printOmoRouting*(omo: OmoConfig) =
   echo "\e[1m nimakai v" & Version & "\e[0m  \e[90moh-my-opencode routing\e[0m"
   echo ""
 
-  proc pad(s: string, w: int): string =
-    if s.len >= w: s[0..<w] else: s & ' '.repeat(w - s.len)
-
   if omo.agents.len > 0:
     echo "\e[1;90m  AGENTS\e[0m"
     for a in omo.agents:
-      echo "  " & pad(a.name, 25) & "\e[90m→\e[0m " & a.model
+      echo "  " & padRight(a.name, 25) & "\e[90m→\e[0m " & a.model
 
   if omo.categories.len > 0:
     echo ""
     echo "\e[1;90m  CATEGORIES\e[0m"
     for c in omo.categories:
-      echo "  " & pad(c.name, 25) & "\e[90m→\e[0m " & c.model
+      echo "  " & padRight(c.name, 25) & "\e[90m→\e[0m " & c.model
 
   echo ""

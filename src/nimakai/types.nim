@@ -1,6 +1,6 @@
 ## Core types, enums, and constants for nimakai.
 
-## No external imports needed for types.
+import std/strutils
 
 const
   Version* = "0.4.0"
@@ -73,6 +73,8 @@ type
     perfectP95*: float
     normalAvg*: float
     normalP95*: float
+    slowAvg*: float
+    verySlowAvg*: float
     spikeMs*: float
 
   SortColumn* = enum
@@ -112,8 +114,20 @@ const DefaultThresholds* = Thresholds(
   perfectP95: 800.0,
   normalAvg: 1000.0,
   normalP95: 2000.0,
+  slowAvg: 2000.0,
+  verySlowAvg: 5000.0,
   spikeMs: 3000.0,
 )
+
+proc padRight*(s: string, width: int): string =
+  ## Pad string to width, truncating if too long.
+  if s.len >= width: s[0..<width]
+  else: s & ' '.repeat(width - s.len)
+
+proc padLeft*(s: string, width: int): string =
+  ## Left-pad string to width, truncating if too long.
+  if s.len >= width: s[0..<width]
+  else: ' '.repeat(width - s.len) & s
 
 proc addSample*(stats: var ModelStats, ms: float) =
   ## Add a latency sample to the ring buffer.

@@ -10,7 +10,8 @@ proc backupOmo*(path: string = ""): string =
   if not fileExists(p):
     raise newException(IOError, "oh-my-opencode.json not found at: " & p)
 
-  let ts = now().format("yyyyMMdd-HHmmss")
+  let n = now()
+  let ts = n.format("yyyyMMdd-HHmmss") & "-" & $(n.nanosecond div 1_000_000)
   let backupPath = p & ".bak." & ts
   copyFile(p, backupPath)
   backupPath

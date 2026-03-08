@@ -39,6 +39,8 @@ proc loadConfigFile*(path: string = ""): tuple[
       result.thresholds.perfectP95 = th{"perfect_p95"}.getFloat(800.0)
       result.thresholds.normalAvg = th{"normal_avg"}.getFloat(1000.0)
       result.thresholds.normalP95 = th{"normal_p95"}.getFloat(2000.0)
+      result.thresholds.slowAvg = th{"slow_avg"}.getFloat(2000.0)
+      result.thresholds.verySlowAvg = th{"very_slow_avg"}.getFloat(5000.0)
       result.thresholds.spikeMs = th{"spike_ms"}.getFloat(3000.0)
     if data.hasKey("favorites"):
       for f in data["favorites"]:
@@ -70,6 +72,8 @@ proc saveConfigFile*(path: string = "", favorites: seq[string] = @[],
       "perfect_p95": thresholds.perfectP95,
       "normal_avg": thresholds.normalAvg,
       "normal_p95": thresholds.normalP95,
+      "slow_avg": thresholds.slowAvg,
+      "very_slow_avg": thresholds.verySlowAvg,
       "spike_ms": thresholds.spikeMs,
     },
     "favorites": favArr,

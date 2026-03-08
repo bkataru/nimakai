@@ -204,8 +204,9 @@ proc runBenchmark(cfg: Config, cat: seq[ModelMeta], favorites: seq[string]) =
         m.awaitAll:
           for i in 0..<stats.len:
             m.spawn doPing(cfg.apiKey, stats[i].id, cfg.timeout) -> results[i]
-      except ValueError:
-        discard
+      except CatchableError as e:
+        if not cfg.jsonOutput:
+          stderr.writeLine &"\e[33mWarning: ping pool error: {e.msg}\e[0m"
 
       for i in 0..<stats.len:
         let pr = results[i]
@@ -305,8 +306,9 @@ proc runRecommend(cfg: Config, cat: seq[ModelMeta]) =
       m.awaitAll:
         for i in 0..<stats.len:
           m.spawn doPing(cfg.apiKey, stats[i].id, cfg.timeout) -> results[i]
-    except ValueError:
-      discard
+    except CatchableError as e:
+      if not cfg.jsonOutput:
+        stderr.writeLine &"\e[33mWarning: ping pool error: {e.msg}\e[0m"
 
     for i in 0..<stats.len:
       let pr = results[i]
@@ -386,6 +388,11 @@ proc main() =
         # Default subset: S+ and S tier only
         let filtered = filterByTier(cat, "S")
         models = catalogModelIds(filtered)
+
+    if models.len == 0:
+      stderr.writeLine "\e[31mError: no models matched the filter\e[0m"
+      stderr.writeLine "Use --models, --tier, or --opencode to specify models"
+      quit(1)
 
     var runCfg = cfg
     runCfg.models = models
