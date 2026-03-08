@@ -15,6 +15,9 @@ proc parseArgs(): Config =
     interval: DefaultInterval,
     timeout: DefaultTimeout,
     jsonOutput: false,
+    quiet: false,
+    noHistory: false,
+    dryRun: false,
     apiKey: "",
     subcommand: smBenchmark,
     tierFilter: "",
@@ -35,6 +38,7 @@ proc parseArgs(): Config =
   if fileCfg.models.len > 0: result.models = fileCfg.models
   if fileCfg.tierFilter.len > 0: result.tierFilter = fileCfg.tierFilter
   result.thresholds = fileCfg.thresholds
+  result.categoryWeights = fileCfg.categoryWeights
 
   let params = commandLineParams()
 
@@ -92,6 +96,9 @@ proc parseArgs(): Config =
       of "rounds", "r":
         try: result.rounds = parseInt(p.val)
         except ValueError: discard
+      of "quiet", "q": result.quiet = true
+      of "no-history": result.noHistory = true
+      of "dry-run": result.dryRun = true
       of "apply": result.applySync = true
       of "rollback": result.rollback = true
       of "help", "h":
@@ -120,6 +127,9 @@ Options:
   --rounds, -r <n>       Benchmark rounds for recommend (default: 3)
   --apply                Apply recommendations to oh-my-opencode.json
   --rollback             Rollback oh-my-opencode.json from backup
+  --quiet, -q            Suppress stderr status messages
+  --no-history           Don't write to history file
+  --dry-run              Preview recommend changes without applying
   --help, -h             Show this help
   --version, -v          Show version
 
@@ -140,7 +150,7 @@ Examples:
 """
         quit(0)
       of "version", "v":
-        echo &"nimakai v{Version}"
+        echo &"nimakai v{Version} ({GitCommit}, {BuildDate})"
         quit(0)
       else:
         stderr.writeLine &"Unknown option: {p.key}"
@@ -175,6 +185,45 @@ proc tryReadKey(): char =
 
 # --- Main ---
 
+proc editDistance(a, b: string): int =
+  ## Levenshtein edit distance for fuzzy matching.
+  let m = a.len
+  let n = b.len
+  var d = newSeq[seq[int]](m + 1)
+  for i in 0..m:
+    d[i] = newSeq[int](n + 1)
+    d[i][0] = i
+  for j in 0..n:
+    d[0][j] = j
+  for i in 1..m:
+    for j in 1..n:
+      let cost = if a[i-1] == b[j-1]: 0 else: 1
+      d[i][j] = min(d[i-1][j] + 1, min(d[i][j-1] + 1, d[i-1][j-1] + cost))
+  d[m][n]
+
+proc validateModels(models: seq[string], cat: seq[ModelMeta]) =
+  ## Warn about model IDs not found in catalog, suggest closest matches.
+  for m in models:
+    var found = false
+    for c in cat:
+      if c.id == m:
+        found = true
+        break
+    if not found:
+      var bestDist = int.high
+      var bestMatch = ""
+      let mLower = m.toLowerAscii()
+      for c in cat:
+        let d = editDistance(mLower, c.id.toLowerAscii())
+        if d < bestDist:
+          bestDist = d
+          bestMatch = c.id
+      var msg = &"\e[33mWarning: '{m}' not found in catalog"
+      if bestMatch.len > 0 and bestDist <= m.len div 2:
+        msg &= &" — did you mean '{bestMatch}'?"
+      msg &= "\e[0m"
+      stderr.writeLine msg
+
 proc runBenchmark(cfg: Config, cat: seq[ModelMeta], favorites: seq[string]) =
   var stats: seq[ModelStats] = @[]
   for m in cfg.models:
@@ -205,7 +254,7 @@ proc runBenchmark(cfg: Config, cat: seq[ModelMeta], favorites: seq[string]) =
           for i in 0..<stats.len:
             m.spawn doPing(cfg.apiKey, stats[i].id, cfg.timeout) -> results[i]
       except CatchableError as e:
-        if not cfg.jsonOutput:
+        if not cfg.jsonOutput and not cfg.quiet:
           stderr.writeLine &"\e[33mWarning: ping pool error: {e.msg}\e[0m"
 
       for i in 0..<stats.len:
@@ -228,7 +277,8 @@ proc runBenchmark(cfg: Config, cat: seq[ModelMeta], favorites: seq[string]) =
         printTable(stats, round, cat, sortCol, cfg.thresholds)
 
       # Persist to history
-      appendRound(stats, round)
+      if not cfg.noHistory:
+        appendRound(stats, round)
 
       if cfg.once:
         break
@@ -282,7 +332,7 @@ proc runRecommend(cfg: Config, cat: seq[ModelMeta]) =
     if m.id notin modelSet:
       modelSet.add(m.id)
 
-  if not cfg.jsonOutput:
+  if not cfg.jsonOutput and not cfg.quiet:
     stderr.writeLine &"\e[1m nimakai\e[0m v{Version}"
     stderr.writeLine &"\e[90m  recommend mode | {cfg.rounds} rounds | {modelSet.len} models\e[0m"
 
@@ -294,7 +344,7 @@ proc runRecommend(cfg: Config, cat: seq[ModelMeta]) =
 
   # Run benchmark rounds
   for round in 1..cfg.rounds:
-    if not cfg.jsonOutput:
+    if not cfg.jsonOutput and not cfg.quiet:
       stderr.write &"\r\e[90m  round {round}/{cfg.rounds}...\e[0m"
 
     var results = newSeq[PingResult](stats.len)
@@ -307,7 +357,7 @@ proc runRecommend(cfg: Config, cat: seq[ModelMeta]) =
         for i in 0..<stats.len:
           m.spawn doPing(cfg.apiKey, stats[i].id, cfg.timeout) -> results[i]
     except CatchableError as e:
-      if not cfg.jsonOutput:
+      if not cfg.jsonOutput and not cfg.quiet:
         stderr.writeLine &"\e[33mWarning: ping pool error: {e.msg}\e[0m"
 
     for i in 0..<stats.len:
@@ -322,18 +372,20 @@ proc runRecommend(cfg: Config, cat: seq[ModelMeta]) =
     if round < cfg.rounds:
       sleep(2000) # brief pause between rounds
 
-  if not cfg.jsonOutput:
+  if not cfg.jsonOutput and not cfg.quiet:
     stderr.writeLine "\r\e[90m  benchmarking complete.     \e[0m"
 
-  let recs = recommend(stats, cat, omo, cfg.thresholds)
+  let recs = recommend(stats, cat, omo, cfg.thresholds, cfg.categoryWeights)
 
   if cfg.jsonOutput:
     echo $recommendationsToJson(recs)
-  elif cfg.applySync:
+  elif cfg.applySync and not cfg.dryRun:
     printRecommendations(recs, cfg.rounds)
     discard syncRecommendations(recs)
   else:
     printRecommendations(recs, cfg.rounds)
+    if cfg.dryRun and cfg.applySync:
+      stderr.writeLine "\e[90m  (dry-run: changes not applied)\e[0m"
 
 proc main() =
   let cfg = parseArgs()
@@ -394,10 +446,13 @@ proc main() =
       stderr.writeLine "Use --models, --tier, or --opencode to specify models"
       quit(1)
 
+    if not cfg.quiet:
+      validateModels(models, cat)
+
     var runCfg = cfg
     runCfg.models = models
 
-    if not cfg.jsonOutput:
+    if not cfg.jsonOutput and not cfg.quiet:
       stderr.writeLine &"\e[1m nimakai\e[0m v{Version}"
       stderr.writeLine &"\e[90m  {models.len} models | {cfg.interval}s interval | {cfg.timeout}s timeout | concurrent pings\e[0m"
 

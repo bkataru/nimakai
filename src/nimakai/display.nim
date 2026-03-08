@@ -1,7 +1,15 @@
 ## Terminal table and JSON rendering for nimakai.
 
-import std/[strformat, strutils, json, algorithm, options]
+import std/[strformat, strutils, json, algorithm, options, terminal]
 import ./[types, metrics, catalog]
+
+proc termWidth*(): int =
+  ## Get terminal width, defaulting to 120 if detection fails.
+  try:
+    let w = terminalWidth()
+    if w > 0: w else: 120
+  except CatchableError:
+    120
 
 proc stripAnsi*(s: string): int =
   var i = 0
@@ -95,13 +103,19 @@ proc sortStats*(stats: var seq[ModelStats], col: SortColumn,
 proc printTable*(stats: seq[ModelStats], round: int,
                  cat: seq[ModelMeta], sortCol: SortColumn,
                  th: Thresholds = DefaultThresholds) =
+  let tw = termWidth()
+  # Adapt model name column: fixed columns need ~82 chars, rest goes to model name
+  let fixedCols = 5 + 10 + 10 + 10 + 10 + 6 + 2 + 12 + 12 + 7 + 2 # prefix
+  let nameWidth = max(15, min(45, tw - fixedCols))
+  let sepWidth = min(tw - 4, nameWidth + fixedCols - 2)
+
   let hdr = &"\e[1m nimakai v{Version}\e[0m  \e[90mround {round} | NVIDIA NIM latency benchmark | sort: {sortCol}\e[0m"
   echo ""
   echo hdr
   echo ""
 
   let header = "  " &
-    padRight("MODEL", 30) &
+    padRight("MODEL", nameWidth) &
     padLeft("TIER", 5) &
     padLeft("LATEST", 10) &
     padLeft("AVG", 10) &
@@ -112,7 +126,7 @@ proc printTable*(stats: seq[ModelStats], round: int,
     padRight("VERDICT", 12) &
     padLeft("UP%", 7)
   echo "\e[1;90m" & header & "\e[0m"
-  echo "\e[90m  " & "-".repeat(112) & "\e[0m"
+  echo "\e[90m  " & "-".repeat(sepWidth) & "\e[0m"
 
   for s in stats:
     let meta = cat.lookupMeta(s.id)
@@ -120,7 +134,7 @@ proc printTable*(stats: seq[ModelStats], round: int,
                       elif meta.isSome: meta.get.name
                       else: s.id
     let prefix = if s.favorite: "* " else: "  "
-    var line = prefix & padRight(displayName, 30)
+    var line = prefix & padRight(displayName, nameWidth)
 
     # Tier column
     if meta.isSome:

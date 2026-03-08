@@ -1,7 +1,7 @@
 ## JSONL persistence for benchmark history.
 ## Location: ~/.local/share/nimakai/history.jsonl
 
-import std/[json, os, times, strutils, algorithm, math]
+import std/[json, os, times, strutils, algorithm, math, tables]
 import ./[types, metrics]
 
 proc defaultHistoryPath*(): string =
@@ -116,29 +116,27 @@ proc printHistory*(days: int = 7, path: string = "") =
     sumStab: int
     upRounds: int
 
-  var aggs: seq[tuple[id: string, agg: ModelAgg]] = @[]
-
-  proc findOrAdd(id: string): int =
-    for i in 0..<aggs.len:
-      if aggs[i].id == id: return i
-    aggs.add((id: id, agg: ModelAgg()))
-    return aggs.len - 1
+  var aggTable = initTable[string, ModelAgg]()
+  var modelOrder: seq[string] = @[]  # preserve insertion order
 
   for e in entries:
     for m in e.models:
-      let idx = findOrAdd(m.id)
-      aggs[idx].agg.totalRounds += 1
-      aggs[idx].agg.sumAvg += m.avg
-      aggs[idx].agg.sumP95 += m.p95
-      aggs[idx].agg.sumStab += m.stability
+      if m.id notin aggTable:
+        aggTable[m.id] = ModelAgg()
+        modelOrder.add(m.id)
+      aggTable[m.id].totalRounds += 1
+      aggTable[m.id].sumAvg += m.avg
+      aggTable[m.id].sumP95 += m.p95
+      aggTable[m.id].sumStab += m.stability
       if m.health == "UP":
-        aggs[idx].agg.upRounds += 1
+        aggTable[m.id].upRounds += 1
 
   echo "\e[1;90m  " & padRight("MODEL", 35) & padLeft("AVG", 10) & padLeft("P95", 10) &
        padLeft("STAB", 8) & padLeft("UP%", 8) & padLeft("ROUNDS", 8) & "\e[0m"
   echo "\e[90m  " & "-".repeat(79) & "\e[0m"
 
-  for (id, a) in aggs:
+  for id in modelOrder:
+    let a = aggTable[id]
     let avgAvg = if a.totalRounds > 0: a.sumAvg / a.totalRounds.float else: 0.0
     let avgP95 = if a.totalRounds > 0: a.sumP95 / a.totalRounds.float else: 0.0
     let avgStab = if a.totalRounds > 0: a.sumStab div a.totalRounds else: 0
@@ -182,53 +180,38 @@ proc detectTrends*(entries: seq[HistoryEntry], minRounds: int = 6): seq[ModelTre
     sumAvg, sumP95: float
     sumStab, upCount, totalCount: int
 
-  proc aggregate(window: seq[HistoryEntry]): seq[tuple[id: string, w: Window]] =
+  proc aggregate(window: seq[HistoryEntry]): Table[string, Window] =
+    result = initTable[string, Window]()
     for e in window:
       for m in e.models:
-        var found = false
-        for i in 0..<result.len:
-          if result[i].id == m.id:
-            result[i].w.sumAvg += m.avg
-            result[i].w.sumP95 += m.p95
-            result[i].w.sumStab += m.stability
-            result[i].w.totalCount += 1
-            if m.health == "UP": result[i].w.upCount += 1
-            found = true
-            break
-        if not found:
-          var w: Window
-          w.sumAvg = m.avg
-          w.sumP95 = m.p95
-          w.sumStab = m.stability
-          w.totalCount = 1
-          if m.health == "UP": w.upCount = 1
-          result.add((id: m.id, w: w))
+        if m.id notin result:
+          result[m.id] = Window()
+        result[m.id].sumAvg += m.avg
+        result[m.id].sumP95 += m.p95
+        result[m.id].sumStab += m.stability
+        result[m.id].totalCount += 1
+        if m.health == "UP": result[m.id].upCount += 1
 
   let olderAggs = aggregate(older)
   let recentAggs = aggregate(recent)
 
-  for ra in recentAggs:
+  for id, ra in recentAggs:
     var trend: ModelTrend
-    trend.id = ra.id
+    trend.id = id
 
-    var olderW: Window
-    var hasOlder = false
-    for oa in olderAggs:
-      if oa.id == ra.id:
-        olderW = oa.w
-        hasOlder = true
-        break
+    let hasOlder = id in olderAggs
+    let olderW = if hasOlder: olderAggs[id] else: Window()
 
     if not hasOlder or olderW.totalCount == 0:
       trend.direction = tdInsufficient
       result.add(trend)
       continue
 
-    let recentAvg = ra.w.sumAvg / ra.w.totalCount.float
+    let recentAvg = ra.sumAvg / ra.totalCount.float
     let olderAvg = olderW.sumAvg / olderW.totalCount.float
-    let recentStab = ra.w.sumStab div ra.w.totalCount
+    let recentStab = ra.sumStab div ra.totalCount
     let olderStab = olderW.sumStab div olderW.totalCount
-    let recentUp = ra.w.upCount.float / ra.w.totalCount.float * 100.0
+    let recentUp = ra.upCount.float / ra.totalCount.float * 100.0
     let olderUp = olderW.upCount.float / olderW.totalCount.float * 100.0
 
     trend.recentAvg = recentAvg

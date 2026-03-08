@@ -1,5 +1,5 @@
 # Package
-version       = "0.4.0"
+version       = "0.5.0"
 author        = "bkataru"
 description   = "NVIDIA NIM model latency benchmarker"
 license       = "MIT"
@@ -25,3 +25,4 @@ task test, "Run tests":
   exec "nim c -d:ssl --path:src -r tests/test_recommend.nim"
   exec "nim c -d:ssl --path:src -r tests/test_sync.nim"
   exec "nim c -d:ssl --path:src -r tests/test_history.nim"
+  exec "nim c -d:ssl --path:src -r tests/test_integration.nim"

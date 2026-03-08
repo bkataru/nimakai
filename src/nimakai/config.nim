@@ -10,7 +10,8 @@ proc defaultConfigPath*(): string =
 proc loadConfigFile*(path: string = ""): tuple[
     interval: int, timeout: int, models: seq[string],
     tierFilter: string, thresholds: Thresholds,
-    favorites: seq[string]] =
+    favorites: seq[string],
+    categoryWeights: seq[tuple[category: string, weights: CategoryWeights]]] =
   ## Load config from file. Returns defaults if file doesn't exist.
   result.interval = DefaultInterval
   result.timeout = DefaultTimeout
@@ -18,6 +19,7 @@ proc loadConfigFile*(path: string = ""): tuple[
   result.tierFilter = ""
   result.thresholds = DefaultThresholds
   result.favorites = @[]
+  result.categoryWeights = @[]
 
   let p = if path.len > 0: path else: defaultConfigPath()
   if not fileExists(p): return
@@ -45,6 +47,19 @@ proc loadConfigFile*(path: string = ""): tuple[
     if data.hasKey("favorites"):
       for f in data["favorites"]:
         result.favorites.add(f.getStr())
+    if data.hasKey("category_weights"):
+      let cw = data["category_weights"]
+      for key in cw.keys:
+        let w = cw[key]
+        result.categoryWeights.add((
+          category: key,
+          weights: CategoryWeights(
+            swe: w{"swe"}.getFloat(0.0),
+            speed: w{"speed"}.getFloat(0.0),
+            ctx: w{"ctx"}.getFloat(0.0),
+            stability: w{"stability"}.getFloat(0.0),
+          )
+        ))
   except CatchableError:
     discard
 

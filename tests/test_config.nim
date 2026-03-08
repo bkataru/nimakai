@@ -78,3 +78,63 @@ suite "saveFavorites":
     check fileExists(path)
     let data = parseJson(readFile(path))
     check data["favorites"][0].getStr() == "model/x"
+
+suite "loadConfigFile category_weights":
+  test "loads category weights from config":
+    let path = "/tmp/test-nimakai-catw.json"
+    let data = %*{
+      "category_weights": {
+        "quick": {"swe": 0.10, "speed": 0.60, "ctx": 0.10, "stability": 0.20}
+      }
+    }
+    writeFile(path, $data)
+    defer: removeFile(path)
+
+    let cfg = loadConfigFile(path)
+    check cfg.categoryWeights.len == 1
+    check cfg.categoryWeights[0].category == "quick"
+    check cfg.categoryWeights[0].weights.swe == 0.10
+    check cfg.categoryWeights[0].weights.speed == 0.60
+    check cfg.categoryWeights[0].weights.ctx == 0.10
+    check cfg.categoryWeights[0].weights.stability == 0.20
+
+  test "returns empty weights when not in config":
+    let path = "/tmp/test-nimakai-catw-empty.json"
+    let data = %*{"interval": 5}
+    writeFile(path, $data)
+    defer: removeFile(path)
+
+    let cfg = loadConfigFile(path)
+    check cfg.categoryWeights.len == 0
+
+  test "loads multiple category weights":
+    let path = "/tmp/test-nimakai-catw-multi.json"
+    let data = %*{
+      "category_weights": {
+        "quick": {"swe": 0.10, "speed": 0.60, "ctx": 0.10, "stability": 0.20},
+        "deep": {"swe": 0.50, "speed": 0.05, "ctx": 0.25, "stability": 0.20}
+      }
+    }
+    writeFile(path, $data)
+    defer: removeFile(path)
+
+    let cfg = loadConfigFile(path)
+    check cfg.categoryWeights.len == 2
+
+    # Find each category (JSON key order not guaranteed)
+    var foundQuick, foundDeep = false
+    for cw in cfg.categoryWeights:
+      if cw.category == "quick":
+        foundQuick = true
+        check cw.weights.swe == 0.10
+        check cw.weights.speed == 0.60
+        check cw.weights.ctx == 0.10
+        check cw.weights.stability == 0.20
+      elif cw.category == "deep":
+        foundDeep = true
+        check cw.weights.swe == 0.50
+        check cw.weights.speed == 0.05
+        check cw.weights.ctx == 0.25
+        check cw.weights.stability == 0.20
+    check foundQuick
+    check foundDeep

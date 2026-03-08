@@ -171,3 +171,59 @@ suite "recommendationsToJson":
     check j["recommendations"][1]["reason"].getStr() == "already optimal"
     check abs(j["recommendations"][1]["current_score"].getFloat() -
               j["recommendations"][1]["recommended_score"].getFloat()) < 0.01
+
+suite "custom weights":
+  test "custom weights override defaults in scoreModel":
+    let stats = makeStats("test/model", [300.0, 320.0, 310.0])
+    let meta = ModelMeta(id: "test/model", name: "Test", tier: tS,
+                         sweScore: 70.0, ctxSize: 131072)
+    let defaultScore = scoreModel(stats, meta, cnBalance)
+    let speedOnlyWeights = CategoryWeights(swe: 0.0, speed: 1.0,
+                                           ctx: 0.0, stability: 0.0)
+    let customScore = scoreModel(stats, meta, cnBalance,
+                                 customWeights = speedOnlyWeights)
+    check abs(defaultScore - customScore) > 0.1
+
+  test "zero custom weights fall back to defaults":
+    let stats = makeStats("test/model", [300.0, 320.0, 310.0])
+    let meta = ModelMeta(id: "test/model", name: "Test", tier: tS,
+                         sweScore: 70.0, ctxSize: 131072)
+    let defaultScore = scoreModel(stats, meta, cnBalance)
+    let zeroWeights = CategoryWeights(swe: 0.0, speed: 0.0,
+                                      ctx: 0.0, stability: 0.0)
+    let zeroScore = scoreModel(stats, meta, cnBalance,
+                               customWeights = zeroWeights)
+    check abs(defaultScore - zeroScore) < 0.001
+
+  test "custom weights via recommend function":
+    # Two models: one fast with low SWE, one slow with high SWE.
+    # Default "deep" weights favor SWE (0.45) over speed (0.10),
+    # so high-swe model wins by default. With speed-only weights,
+    # the fast model should win instead.
+    let cat = @[
+      ModelMeta(id: "fast/model", name: "Fast", tier: tS,
+                sweScore: 50.0, ctxSize: 131072),
+      ModelMeta(id: "smart/model", name: "Smart", tier: tSPlus,
+                sweScore: 80.0, ctxSize: 262144),
+    ]
+    let stats = @[
+      makeStats("fast/model", [100.0, 110.0, 105.0]),
+      makeStats("smart/model", [2000.0, 2100.0, 2200.0]),
+    ]
+    let omo = OmoConfig(
+      agents: @[],
+      categories: @[OmoCategory(name: "deep", model: "smart/model")],
+    )
+
+    # Without weight overrides: deep favors SWE, smart/model should stay
+    let defaultRecs = recommend(stats, cat, omo)
+    check defaultRecs.len == 1
+    check defaultRecs[0].recommendedModel == "smart/model"
+
+    # With speed-only weight override: fast/model should win
+    let speedWeights = CategoryWeights(swe: 0.0, speed: 1.0,
+                                       ctx: 0.0, stability: 0.0)
+    let overrides = @[(category: "deep", weights: speedWeights)]
+    let customRecs = recommend(stats, cat, omo, weightOverrides = overrides)
+    check customRecs.len == 1
+    check customRecs[0].recommendedModel == "fast/model"

@@ -29,21 +29,25 @@ proc categorizeNeed*(name: string): CategoryNeed =
   of "visual-engineering": cnVision
   else: cnBalance
 
-type Weights = object
-  swe, speed, ctx, stability: float
-
-proc weightsFor(need: CategoryNeed): Weights =
+proc defaultWeightsFor*(need: CategoryNeed): CategoryWeights =
+  ## Return default scoring weights for a category need.
   case need
-  of cnSpeed: Weights(swe: 0.15, speed: 0.55, ctx: 0.10, stability: 0.20)
-  of cnQuality: Weights(swe: 0.45, speed: 0.10, ctx: 0.25, stability: 0.20)
-  of cnReliability: Weights(swe: 0.25, speed: 0.20, ctx: 0.15, stability: 0.40)
-  of cnVision: Weights(swe: 0.30, speed: 0.20, ctx: 0.20, stability: 0.30)
-  of cnBalance: Weights(swe: 0.30, speed: 0.30, ctx: 0.15, stability: 0.25)
+  of cnSpeed: CategoryWeights(swe: 0.15, speed: 0.55, ctx: 0.10, stability: 0.20)
+  of cnQuality: CategoryWeights(swe: 0.45, speed: 0.10, ctx: 0.25, stability: 0.20)
+  of cnReliability: CategoryWeights(swe: 0.25, speed: 0.20, ctx: 0.15, stability: 0.40)
+  of cnVision: CategoryWeights(swe: 0.30, speed: 0.20, ctx: 0.20, stability: 0.30)
+  of cnBalance: CategoryWeights(swe: 0.30, speed: 0.30, ctx: 0.15, stability: 0.25)
 
 proc scoreModel*(stats: ModelStats, meta: ModelMeta, need: CategoryNeed,
-                 th: Thresholds = DefaultThresholds): float =
+                 th: Thresholds = DefaultThresholds,
+                 customWeights: CategoryWeights = CategoryWeights()): float =
   ## Score a model 0-100 for a given category need.
-  let w = weightsFor(need)
+  ## If customWeights has non-zero fields, they override the defaults.
+  let defaultW = defaultWeightsFor(need)
+  let w = if customWeights.swe + customWeights.speed + customWeights.ctx + customWeights.stability > 0:
+            customWeights
+          else:
+            defaultW
 
   # SWE score (0-100, already in percent)
   let sweScore = meta.sweScore
@@ -71,10 +75,19 @@ proc scoreModel*(stats: ModelStats, meta: ModelMeta, need: CategoryNeed,
 
 proc recommend*(stats: seq[ModelStats], cat: seq[ModelMeta],
                 omo: OmoConfig,
-                th: Thresholds = DefaultThresholds): seq[Recommendation] =
+                th: Thresholds = DefaultThresholds,
+                weightOverrides: seq[tuple[category: string, weights: CategoryWeights]] = @[]): seq[Recommendation] =
   ## Generate routing recommendations for each OMO category.
   for omocat in omo.categories:
     let need = categorizeNeed(omocat.name)
+
+    # Look up custom weights for this category
+    var customW = CategoryWeights()
+    for wo in weightOverrides:
+      if wo.category == omocat.name:
+        customW = wo.weights
+        break
+
     var bestModel = ""
     var bestScore = -1.0
     var currentScore = -1.0
@@ -84,7 +97,7 @@ proc recommend*(stats: seq[ModelStats], cat: seq[ModelMeta],
       if meta.isNone: continue
       if s.ringLen == 0: continue # no data
 
-      let score = scoreModel(s, meta.get, need, th)
+      let score = scoreModel(s, meta.get, need, th, customW)
 
       if score > bestScore:
         bestScore = score

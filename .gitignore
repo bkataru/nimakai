@@ -18,6 +18,7 @@ tests/test_opencode
 tests/test_recommend
 tests/test_sync
 tests/test_history
+tests/test_integration
 
 # Nimble
 nimbledeps/

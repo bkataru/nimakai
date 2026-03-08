@@ -191,3 +191,13 @@ suite "sortStats":
     sortStats(stats, scStability, cat, th)
     # Higher stability score should come first (descending)
     check stats[0].stabilityScore(th) >= stats[1].stabilityScore(th)
+
+suite "termWidth":
+  test "returns a positive integer":
+    let w = termWidth()
+    check w > 0
+
+  test "returns at least 80":
+    # Minimum usable terminal width
+    let w = termWidth()
+    check w >= 80

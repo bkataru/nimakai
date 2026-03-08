@@ -3,7 +3,9 @@
 import std/strutils
 
 const
-  Version* = "0.4.0"
+  Version* = "0.5.0"
+  GitCommit* = staticExec("git rev-parse --short HEAD 2>/dev/null || echo unknown").strip()
+  BuildDate* = CompileDate & " " & CompileTime
   BaseURL* = "https://integrate.api.nvidia.com/v1/chat/completions"
   DefaultTimeout* = 15
   DefaultInterval* = 5
@@ -77,6 +79,12 @@ type
     verySlowAvg*: float
     spikeMs*: float
 
+  CategoryWeights* = object
+    swe*: float
+    speed*: float
+    ctx*: float
+    stability*: float
+
   SortColumn* = enum
     scName = "name"
     scAvg = "avg"
@@ -99,6 +107,9 @@ type
     interval*: int
     timeout*: int
     jsonOutput*: bool
+    quiet*: bool
+    noHistory*: bool
+    dryRun*: bool
     apiKey*: string
     subcommand*: Subcommand
     tierFilter*: string
@@ -108,6 +119,7 @@ type
     applySync*: bool
     rollback*: bool
     thresholds*: Thresholds
+    categoryWeights*: seq[tuple[category: string, weights: CategoryWeights]]
 
 const DefaultThresholds* = Thresholds(
   perfectAvg: 400.0,
