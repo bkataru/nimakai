@@ -1,0 +1,14 @@
+# Nim build artifacts
+nimcache/
+src/nimcache/
+nimakai
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Nimble
+nimbledeps/
+
+# Secrets
+.env

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="lemon" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#a8e063"/>
+      <stop offset="50%" stop-color="#56ab2f"/>
+      <stop offset="100%" stop-color="#3d8b1e"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2d7a0f"/>
+      <stop offset="100%" stop-color="#1a5c0a"/>
+    </linearGradient>
+  </defs>
+  <!-- Leaf stem -->
+  <path d="M64 18 Q62 28 64 38" stroke="#2d7a0f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- Leaf -->
+  <ellipse cx="72" cy="22" rx="12" ry="6" transform="rotate(-30 72 22)" fill="url(#leaf)" opacity="0.9"/>
+  <path d="M63 22 Q72 19 80 22" stroke="#1a5c0a" stroke-width="0.8" fill="none"/>
+  <!-- Lemon body -->
+  <ellipse cx="64" cy="72" rx="30" ry="38" fill="url(#lemon)"/>
+  <!-- Top nub -->
+  <ellipse cx="64" cy="36" rx="8" ry="5" fill="#8bc34a"/>
+  <!-- Bottom nub -->
+  <ellipse cx="64" cy="108" rx="6" ry="4" fill="#4a8c1a"/>
+  <!-- Highlight -->
+  <ellipse cx="52" cy="60" rx="8" ry="18" fill="white" opacity="0.15" transform="rotate(-10 52 60)"/>
+  <!-- Subtle texture lines -->
+  <path d="M48 50 Q64 48 80 52" stroke="#4a8c1a" stroke-width="0.5" fill="none" opacity="0.3"/>
+  <path d="M46 65 Q64 62 82 66" stroke="#4a8c1a" stroke-width="0.5" fill="none" opacity="0.25"/>
+  <path d="M47 80 Q64 77 81 81" stroke="#4a8c1a" stroke-width="0.5" fill="none" opacity="0.2"/>
+</svg>
